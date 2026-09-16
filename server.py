@@ -23,7 +23,7 @@ class AlunoService(ServiceBase):
         dados = alunos.get(ra)
 
         if not dados:
-            return AlunoModel
+            return AlunoModel(situacao="Aluno não encontrado")
         
         media = (dados["nota1"] + dados["nota2"])/2
         if media>= 7.0:

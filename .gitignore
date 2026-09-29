@@ -1,3 +1,17 @@
-venv/
+# Ambientes virtuais
 .venv/
+venv/
+
+# Cache e bytecode do Python
 __pycache__/
+*.pyc
+
+# Testes e cobertura
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Configurações de IDEs
+.vscode/
+.idea/

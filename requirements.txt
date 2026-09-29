@@ -1,5 +1,7 @@
 spyne
 lxml
 zeep
-streamlit
+legacy-cgi
 pytest
+pytest-cov
+requests

@@ -1,45 +1,46 @@
-from spyne import Application, rpc, ServiceBase, Unicode, Integer, Float, ComplexModel  
+import compat  # noqa: F401
+from spyne import Application
 from spyne.protocol.soap import Soap11
 from spyne.server.wsgi import WsgiApplication
-from wsgiref.simple_server import make_server
+from spyne.model.fault import Fault
 
-class AlunoModel(ComplexModel):
-    nome = Unicode
-    nota1 = Float
-    nota2 = Float
-    media = Float
-    situacao = Unicode
+from services.aluno_service import AlunoService, repo
+from security.auth import autenticar, extrair_credenciais_wsse
+from security.roles import verificar_acesso, OPERATION_ROLES
+from security.rate_limit import check_rate_limit
 
-alunos = {
-    1: {"nome": "Enzo", "nota1": 8.0, "nota2": 7.0, "media": "7.75"},
-    2: {"nome": "Pedro", "nota1": 9.0, "nota2": 6.0, "media": "7.5"},
-    3: {"nome": "Julia", "nota1": 10.0, "nota2": 9.0, "media": "9.5"}
-}
+dados_iniciais = [
+    {"nome": "Enzo", "nota1": 8.0, "nota2": 7.0},
+    {"nome": "Pedro", "nota1": 9.0, "nota2": 6.0},
+    {"nome": "Julia", "nota1": 10.0, "nota2": 9.0},
+]
 
-class AlunoService(ServiceBase):
-    @rpc(Integer, _returns=AlunoModel)
-    def consultar_aluno(ctx,ra):
-        """Consulta a situação acadêmica de um aluno pelo RA."""
-        dados = alunos.get(ra)
+for dados in dados_iniciais:
+    repo.inserir(dados["nome"], dados["nota1"], dados["nota2"])
 
-        if not dados:
-            return AlunoModel(situacao="Aluno não encontrado")
-        
-        media = (dados["nota1"] + dados["nota2"])/2
-        if media>= 7.0:
-            situacao = "Aprovado"
-        elif media>= 5.0:
-            situacao = "Recuperação"
-        else:
-            situacao = "Reprovado"
+def _on_method_call(ctx):
+    ip_address = None
+    if ctx.transport and hasattr(ctx.transport, 'req'):
+        ip_address = ctx.transport.req.get('REMOTE_ADDR')
 
-        return AlunoModel(
-            nome=dados["nome"],
-            nota1=dados["nota1"],
-            nota2=dados["nota2"],
-            media=media,
-            situacao=situacao
-        )
+    if ip_address and not check_rate_limit(ip_address):
+        raise Fault("Client", "Rate limit excedido. Tente novamente mais tarde.")
+
+    method_name = ctx.descriptor.name
+
+    if method_name in OPERATION_ROLES:
+        username, password = extrair_credenciais_wsse(ctx)
+
+        if not username or not password:
+            raise Fault("Client", "Autenticação necessária")
+
+        if not autenticar(username, password):
+            raise Fault("Client", "Credenciais inválidas")
+
+        if not verificar_acesso(username, method_name):
+            raise Fault("Client", "Acesso negado: permissão insuficiente")
+
+AlunoService.event_manager.add_listener('method_call', _on_method_call)
 
 application = Application(
     [AlunoService],
@@ -49,9 +50,3 @@ application = Application(
 )
 
 wsgi_app = WsgiApplication(application)
-
-if __name__ == "__main__":
-    print("servidor soap rodando na porta 8000...")
-    print("WSDL disponível em: http://127.0.0.1:8000/?wsdl")
-    server = make_server('127.0.0.1',8000,wsgi_app)
-    server.serve_forever()
